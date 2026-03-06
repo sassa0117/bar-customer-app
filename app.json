@@ -6,7 +6,10 @@
     "orientation": "portrait",
     "scheme": "barapp",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/icon.png",
     "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
       "backgroundColor": "#1a1a2e"
     },
     "ios": {
@@ -15,6 +18,7 @@
     "android": {
       "package": "com.sassa0117.barapp",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#1a1a2e"
       }
     },
@@ -27,6 +31,7 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/images/splash.png",
           "backgroundColor": "#1a1a2e"
         }
       ]
