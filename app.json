@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "bar-app",
+    "slug": "bar-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "barapp",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.sassa0117.barapp",
+      "adaptiveIcon": {
+        "backgroundColor": "#1a1a2e"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a9894347-d7d5-4c71-bc7f-67e5d649442d"
+      }
+    },
+    "owner": "sassa0117"
+  }
+}
