@@ -7,7 +7,6 @@
     "scheme": "barapp",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "resizeMode": "contain",
       "backgroundColor": "#1a1a2e"
     },
     "ios": {
@@ -24,7 +23,13 @@
       "output": "static"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1a1a2e"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
