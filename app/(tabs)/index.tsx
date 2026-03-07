@@ -18,10 +18,13 @@ export default function DashboardScreen() {
   const router = useRouter();
   const {
     todayVisit,
+    todayEvents,
     slips,
     loading,
     loadTodayVisit,
     setDayType,
+    addVisitEvent,
+    removeVisitEvent,
     closeVisit,
   } = useVisitStore();
   const { events, loadEvents } = useMenuStore();
@@ -41,19 +44,19 @@ export default function DashboardScreen() {
   const handleDayTypeToggle = () => {
     if (!todayVisit) return;
     if (todayVisit.dayType === "normal") {
-      if (events.length === 0) {
-        setDayType("event");
-      } else {
-        setShowEventPicker(true);
-      }
+      setShowEventPicker(true);
     } else {
       setDayType("normal");
+      setShowEventPicker(false);
     }
   };
 
   const handleSelectEvent = (eventId: string) => {
-    setDayType("event", eventId);
-    setShowEventPicker(false);
+    addVisitEvent(eventId);
+  };
+
+  const handleRemoveEvent = (visitEventId: string) => {
+    removeVisitEvent(visitEventId);
   };
 
   const handleCloseVisit = () => {
@@ -69,8 +72,6 @@ export default function DashboardScreen() {
       ]
     );
   };
-
-  const selectedEvent = events.find((e) => e.id === todayVisit?.eventId);
 
   return (
     <View style={styles.container}>
@@ -114,8 +115,19 @@ export default function DashboardScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-          {todayVisit?.dayType === "event" && selectedEvent && (
-            <Text style={styles.eventName}>{selectedEvent.name}</Text>
+          {todayEvents.length > 0 && (
+            <View style={styles.eventTagsRow}>
+              {todayEvents.map((ve) => (
+                <View key={ve.id} style={styles.eventTag}>
+                  <Text style={styles.eventTagText}>{ve.eventName}</Text>
+                  {!todayVisit?.isClosed && (
+                    <TouchableOpacity onPress={() => handleRemoveEvent(ve.id)} hitSlop={8}>
+                      <FontAwesome name="times" size={11} color={Colors.accent.purple} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
           )}
         </View>
         {todayVisit?.isClosed && (
@@ -128,16 +140,27 @@ export default function DashboardScreen() {
       {/* Event Picker */}
       {showEventPicker && (
         <View style={styles.eventPicker}>
-          {events.map((evt) => (
-            <TouchableOpacity
-              key={evt.id}
-              style={styles.eventPickerItem}
-              onPress={() => handleSelectEvent(evt.id)}
-            >
-              <FontAwesome name="calendar" size={14} color={Colors.accent.purple} />
-              <Text style={styles.eventPickerText}>{evt.name}</Text>
-            </TouchableOpacity>
-          ))}
+          {events
+            .filter((evt) => !todayEvents.some((ve) => ve.eventId === evt.id))
+            .map((evt) => (
+              <TouchableOpacity
+                key={evt.id}
+                style={styles.eventPickerItem}
+                onPress={() => handleSelectEvent(evt.id)}
+              >
+                <FontAwesome name="calendar" size={14} color={Colors.accent.purple} />
+                <Text style={styles.eventPickerText}>{evt.name}</Text>
+              </TouchableOpacity>
+            ))}
+          {events.filter((evt) => !todayEvents.some((ve) => ve.eventId === evt.id)).length === 0 && (
+            <Text style={styles.eventPickerEmpty}>全てのイベントが追加済みです</Text>
+          )}
+          <TouchableOpacity
+            style={styles.eventPickerClose}
+            onPress={() => setShowEventPicker(false)}
+          >
+            <Text style={styles.eventPickerCloseText}>閉じる</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -306,11 +329,25 @@ const styles = StyleSheet.create({
   dayTypeTextEvent: {
     color: Colors.accent.purple,
   },
-  eventName: {
-    fontSize: 13,
-    color: Colors.accent.purple,
+  eventTagsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
     marginTop: 6,
+  },
+  eventTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: Colors.accent.purpleLight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  eventTagText: {
+    fontSize: 12,
     fontWeight: "600",
+    color: Colors.accent.purple,
   },
   closedBadge: {
     backgroundColor: Colors.accent.greenLight,
@@ -343,6 +380,22 @@ const styles = StyleSheet.create({
   eventPickerText: {
     color: Colors.text.primary,
     fontSize: 14,
+  },
+  eventPickerEmpty: {
+    color: Colors.text.tertiary,
+    fontSize: 13,
+    textAlign: "center",
+    paddingVertical: 8,
+  },
+  eventPickerClose: {
+    alignItems: "center",
+    paddingVertical: 8,
+    marginTop: 4,
+  },
+  eventPickerCloseText: {
+    color: Colors.text.secondary,
+    fontSize: 13,
+    fontWeight: "600",
   },
   summaryRow: {
     flexDirection: "row",

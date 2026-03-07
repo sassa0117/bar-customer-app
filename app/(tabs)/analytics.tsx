@@ -10,7 +10,7 @@ import {
 import FontAwesome from "@expo/vector-icons/FontAwesome";
 import { Colors } from "@/constants/Colors";
 import { db } from "@/db/client";
-import { barVisits, barSlips, barSlipItems, barMenuItems, barCustomers, barEvents } from "@/db/schema";
+import { barVisits, barSlips, barSlipItems, barMenuItems, barCustomers, barEvents, barVisitEvents } from "@/db/schema";
 import { sql, eq, and, gte, lte, desc, asc } from "drizzle-orm";
 import { formatCurrency, formatDuration } from "@/lib/utils";
 
@@ -24,7 +24,7 @@ const PERIOD_LABELS: Record<Period, string> = {
 };
 
 type DailyStat = { date: string; revenue: number; customers: number };
-type EventStat = { eventId: string; eventName: string; revenue: number; customers: number; avgSpend: number };
+type EventStat = { eventId: string; eventName: string; revenue: number; customers: number; avgSpend: number; visitCount: number };
 type CustomerRank = { customerId: string; name: string; visits: number; totalSpend: number; isMember: boolean };
 type MenuRank = { menuItemId: string; name: string; quantity: number; revenue: number };
 
@@ -37,6 +37,8 @@ export default function AnalyticsScreen() {
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [totalCustomers, setTotalCustomers] = useState(0);
   const [totalVisitDays, setTotalVisitDays] = useState(0);
+  const [normalDayStats, setNormalDayStats] = useState({ revenue: 0, days: 0, customers: 0 });
+  const [eventDayStats, setEventDayStats] = useState({ revenue: 0, days: 0, customers: 0 });
 
   const getDateRange = useCallback((): { start: string; end: string } => {
     const now = new Date();
@@ -80,9 +82,10 @@ export default function AnalyticsScreen() {
     const { start, end } = getDateRange();
 
     // Daily stats
-    const daily = await db
+    const dailyRaw = await db
       .select({
         date: barVisits.date,
+        dayType: barVisits.dayType,
         revenue: sql<number>`COALESCE(SUM(${barSlipItems.unitPrice} * ${barSlipItems.quantity}), 0)`,
         customers: sql<number>`COUNT(DISTINCT ${barSlips.id})`,
       })
@@ -90,10 +93,11 @@ export default function AnalyticsScreen() {
       .leftJoin(barSlips, eq(barSlips.visitId, barVisits.id))
       .leftJoin(barSlipItems, eq(barSlipItems.slipId, barSlips.id))
       .where(and(gte(barVisits.date, start), lte(barVisits.date, end)))
-      .groupBy(barVisits.date)
+      .groupBy(barVisits.date, barVisits.dayType)
       .orderBy(asc(barVisits.date));
 
-    setDailyStats(daily.map((d) => ({ date: d.date, revenue: Number(d.revenue), customers: Number(d.customers) })));
+    const daily = dailyRaw.map((d) => ({ date: d.date, revenue: Number(d.revenue), customers: Number(d.customers) }));
+    setDailyStats(daily);
 
     // Totals
     const totRev = daily.reduce((s, d) => s + Number(d.revenue), 0);
@@ -102,37 +106,57 @@ export default function AnalyticsScreen() {
     setTotalCustomers(totCust);
     setTotalVisitDays(daily.length);
 
-    // Event stats
+    // Normal vs Event day comparison
+    const normalDays = daily.filter((d) => {
+      const dayVisit = dailyRaw.find((v) => v.date === d.date);
+      return dayVisit && dayVisit.dayType === "normal";
+    });
+    const eventDays = daily.filter((d) => {
+      const dayVisit = dailyRaw.find((v) => v.date === d.date);
+      return dayVisit && dayVisit.dayType === "event";
+    });
+    setNormalDayStats({
+      revenue: normalDays.reduce((s, d) => s + Number(d.revenue), 0),
+      days: normalDays.length,
+      customers: normalDays.reduce((s, d) => s + Number(d.customers), 0),
+    });
+    setEventDayStats({
+      revenue: eventDays.reduce((s, d) => s + Number(d.revenue), 0),
+      days: eventDays.length,
+      customers: eventDays.reduce((s, d) => s + Number(d.customers), 0),
+    });
+
+    // Event stats (via junction table)
     const evtRows = await db
       .select({
-        eventId: barVisits.eventId,
+        eventId: barVisitEvents.eventId,
         eventName: barEvents.name,
         revenue: sql<number>`COALESCE(SUM(${barSlipItems.unitPrice} * ${barSlipItems.quantity}), 0)`,
         customers: sql<number>`COUNT(DISTINCT ${barSlips.id})`,
+        visitCount: sql<number>`COUNT(DISTINCT ${barVisitEvents.visitId})`,
       })
-      .from(barVisits)
-      .innerJoin(barEvents, eq(barVisits.eventId, barEvents.id))
+      .from(barVisitEvents)
+      .innerJoin(barEvents, eq(barVisitEvents.eventId, barEvents.id))
+      .innerJoin(barVisits, eq(barVisitEvents.visitId, barVisits.id))
       .leftJoin(barSlips, eq(barSlips.visitId, barVisits.id))
       .leftJoin(barSlipItems, eq(barSlipItems.slipId, barSlips.id))
       .where(
         and(
           gte(barVisits.date, start),
-          lte(barVisits.date, end),
-          eq(barVisits.dayType, "event")
+          lte(barVisits.date, end)
         )
       )
-      .groupBy(barVisits.eventId, barEvents.name);
+      .groupBy(barVisitEvents.eventId, barEvents.name);
 
     setEventStats(
-      evtRows
-        .filter((e) => e.eventId !== null)
-        .map((e) => ({
-          eventId: e.eventId!,
-          eventName: e.eventName,
-          revenue: Number(e.revenue),
-          customers: Number(e.customers),
-          avgSpend: Number(e.customers) > 0 ? Math.round(Number(e.revenue) / Number(e.customers)) : 0,
-        }))
+      evtRows.map((e) => ({
+        eventId: e.eventId,
+        eventName: e.eventName,
+        revenue: Number(e.revenue),
+        customers: Number(e.customers),
+        avgSpend: Number(e.customers) > 0 ? Math.round(Number(e.revenue) / Number(e.customers)) : 0,
+        visitCount: Number(e.visitCount),
+      }))
     );
 
     // Customer ranking
@@ -251,10 +275,35 @@ export default function AnalyticsScreen() {
         </View>
       )}
 
-      {/* Event Comparison */}
+      {/* Normal vs Event Day Comparison */}
+      {(normalDayStats.days > 0 || eventDayStats.days > 0) && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>通常営業 vs イベント</Text>
+          <View style={styles.compareRow}>
+            <View style={[styles.compareCard, { borderColor: Colors.accent.blue }]}>
+              <Text style={[styles.compareLabel, { color: Colors.accent.blue }]}>通常営業</Text>
+              <Text style={styles.compareValue}>{formatCurrency(normalDayStats.revenue)}</Text>
+              <Text style={styles.compareMeta}>{normalDayStats.days}日 ・ {normalDayStats.customers}名</Text>
+              <Text style={styles.compareMeta}>
+                日平均 {formatCurrency(normalDayStats.days > 0 ? Math.round(normalDayStats.revenue / normalDayStats.days) : 0)}
+              </Text>
+            </View>
+            <View style={[styles.compareCard, { borderColor: Colors.accent.purple }]}>
+              <Text style={[styles.compareLabel, { color: Colors.accent.purple }]}>イベント</Text>
+              <Text style={styles.compareValue}>{formatCurrency(eventDayStats.revenue)}</Text>
+              <Text style={styles.compareMeta}>{eventDayStats.days}日 ・ {eventDayStats.customers}名</Text>
+              <Text style={styles.compareMeta}>
+                日平均 {formatCurrency(eventDayStats.days > 0 ? Math.round(eventDayStats.revenue / eventDayStats.days) : 0)}
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Per-Event Breakdown */}
       {eventStats.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>イベント別</Text>
+          <Text style={styles.sectionTitle}>イベント別売上</Text>
           {eventStats.map((evt) => (
             <View key={evt.eventId} style={styles.rankCard}>
               <View style={styles.rankIconWrap}>
@@ -263,7 +312,7 @@ export default function AnalyticsScreen() {
               <View style={styles.rankInfo}>
                 <Text style={styles.rankName}>{evt.eventName}</Text>
                 <Text style={styles.rankMeta}>
-                  {evt.customers}名 ・ 客単価 {formatCurrency(evt.avgSpend)}
+                  {evt.visitCount}回開催 ・ {evt.customers}名 ・ 客単価 {formatCurrency(evt.avgSpend)}
                 </Text>
               </View>
               <Text style={styles.rankValue}>{formatCurrency(evt.revenue)}</Text>
@@ -394,6 +443,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.text.secondary,
     marginTop: 4,
+  },
+  compareRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  compareCard: {
+    flex: 1,
+    backgroundColor: Colors.bg.secondary,
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+  },
+  compareLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  compareValue: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.accent.gold,
+    marginBottom: 4,
+  },
+  compareMeta: {
+    fontSize: 11,
+    color: Colors.text.secondary,
+    marginTop: 2,
   },
   section: {
     paddingHorizontal: 16,

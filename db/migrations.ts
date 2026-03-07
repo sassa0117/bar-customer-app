@@ -84,8 +84,30 @@ export async function runMigrations() {
     )
   `);
 
+  // Visit-Events junction table (multi-event per day)
+  await db.run(sql`
+    CREATE TABLE IF NOT EXISTS bar_visit_events (
+      id TEXT PRIMARY KEY,
+      visit_id TEXT NOT NULL REFERENCES bar_visits(id) ON DELETE CASCADE,
+      event_id TEXT NOT NULL REFERENCES bar_events(id),
+      created_at INTEGER NOT NULL
+    )
+  `);
+
+  // Migrate existing single event_id data to junction table
+  await db.run(sql`
+    INSERT OR IGNORE INTO bar_visit_events (id, visit_id, event_id, created_at)
+    SELECT ('mig_' || id), id, event_id, created_at
+    FROM bar_visits
+    WHERE event_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM bar_visit_events WHERE bar_visit_events.visit_id = bar_visits.id AND bar_visit_events.event_id = bar_visits.event_id
+    )
+  `);
+
   // Indexes for performance
   await db.run(sql`CREATE INDEX IF NOT EXISTS idx_bar_visits_date ON bar_visits(date)`);
   await db.run(sql`CREATE INDEX IF NOT EXISTS idx_bar_slips_visit ON bar_slips(visit_id, customer_id)`);
   await db.run(sql`CREATE INDEX IF NOT EXISTS idx_bar_slip_items_slip ON bar_slip_items(slip_id)`);
+  await db.run(sql`CREATE INDEX IF NOT EXISTS idx_bar_visit_events ON bar_visit_events(visit_id, event_id)`);
 }

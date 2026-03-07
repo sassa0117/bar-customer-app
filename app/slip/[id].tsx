@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   FlatList,
   Alert,
@@ -95,7 +96,19 @@ export default function SlipDetailScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.itemList}
         renderItem={({ item }) => (
-          <View style={styles.itemCard}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.itemCard,
+              pressed && isOpen && styles.itemCardPressed,
+            ]}
+            onLongPress={() => {
+              if (isOpen) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                handleRemove(item.id, item.menuItemName);
+              }
+            }}
+            delayLongPress={500}
+          >
             <View style={styles.itemInfo}>
               <Text style={styles.itemName}>{item.menuItemName}</Text>
               <Text style={styles.itemPrice}>
@@ -122,13 +135,18 @@ export default function SlipDetailScreen() {
                 </TouchableOpacity>
               </View>
             )}
-          </View>
+          </Pressable>
         )}
         ListEmptyComponent={
           <View style={styles.emptyItems}>
             <FontAwesome name="cutlery" size={30} color={Colors.text.tertiary} />
             <Text style={styles.emptyText}>まだ注文がありません</Text>
           </View>
+        }
+        ListFooterComponent={
+          isOpen && activeSlip.items.length > 0 ? (
+            <Text style={styles.longPressHint}>長押しで注文をキャンセル</Text>
+          ) : null
         }
       />
 
@@ -226,6 +244,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
+  itemCardPressed: {
+    backgroundColor: Colors.accent.redLight,
+    borderColor: Colors.accent.red,
+  },
   itemInfo: {
     flex: 1,
   },
@@ -275,6 +297,13 @@ const styles = StyleSheet.create({
   emptyText: {
     color: Colors.text.tertiary,
     fontSize: 14,
+  },
+  longPressHint: {
+    textAlign: "center",
+    color: Colors.text.tertiary,
+    fontSize: 11,
+    marginTop: 8,
+    marginBottom: 16,
   },
   bottomBar: {
     flexDirection: "row",

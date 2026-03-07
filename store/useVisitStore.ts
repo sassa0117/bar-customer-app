@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { db } from "@/db/client";
-import { barVisits, barSlips, barSlipItems, barMenuItems, barCustomers } from "@/db/schema";
+import { barVisits, barSlips, barSlipItems, barMenuItems, barCustomers, barVisitEvents, barEvents } from "@/db/schema";
 import { generateId, getTodayString } from "@/lib/utils";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 
 type Visit = typeof barVisits.$inferSelect;
 type Slip = typeof barSlips.$inferSelect;
@@ -19,14 +19,19 @@ export type SlipItemDetail = SlipItem & {
   menuItemName: string;
 };
 
+type VisitEventInfo = { id: string; eventId: string; eventName: string };
+
 interface VisitStore {
   todayVisit: Visit | null;
+  todayEvents: VisitEventInfo[];
   slips: SlipWithTotal[];
   activeSlip: (Slip & { items: SlipItemDetail[]; customerName: string; total: number }) | null;
   loading: boolean;
 
   loadTodayVisit: () => Promise<void>;
-  setDayType: (type: string, eventId?: string | null) => Promise<void>;
+  setDayType: (type: string) => Promise<void>;
+  addVisitEvent: (eventId: string) => Promise<void>;
+  removeVisitEvent: (visitEventId: string) => Promise<void>;
   openSlip: (customerId: string) => Promise<string>;
   loadSlips: () => Promise<void>;
   loadSlipDetail: (slipId: string) => Promise<void>;
@@ -41,6 +46,7 @@ interface VisitStore {
 
 export const useVisitStore = create<VisitStore>((set, get) => ({
   todayVisit: null,
+  todayEvents: [],
   slips: [],
   activeSlip: null,
   loading: false,
@@ -53,8 +59,9 @@ export const useVisitStore = create<VisitStore>((set, get) => ({
       .from(barVisits)
       .where(eq(barVisits.date, today));
 
+    let visit: Visit;
     if (rows.length > 0) {
-      set({ todayVisit: rows[0], loading: false });
+      visit = rows[0];
     } else {
       const now = new Date();
       const id = generateId();
@@ -67,18 +74,72 @@ export const useVisitStore = create<VisitStore>((set, get) => ({
         updatedAt: now,
       });
       const created = await db.select().from(barVisits).where(eq(barVisits.id, id));
-      set({ todayVisit: created[0], loading: false });
+      visit = created[0];
     }
+
+    // Load visit events
+    const visitEvents = await db
+      .select({
+        id: barVisitEvents.id,
+        eventId: barVisitEvents.eventId,
+        eventName: barEvents.name,
+      })
+      .from(barVisitEvents)
+      .innerJoin(barEvents, eq(barVisitEvents.eventId, barEvents.id))
+      .where(eq(barVisitEvents.visitId, visit.id));
+
+    set({ todayVisit: visit, todayEvents: visitEvents, loading: false });
     await get().loadSlips();
   },
 
-  setDayType: async (type, eventId) => {
+  setDayType: async (type) => {
     const visit = get().todayVisit;
     if (!visit) return;
     await db
       .update(barVisits)
-      .set({ dayType: type, eventId: eventId || null, updatedAt: new Date() })
+      .set({ dayType: type, updatedAt: new Date() })
       .where(eq(barVisits.id, visit.id));
+    // If switching to normal, remove all visit events
+    if (type === "normal") {
+      await db.delete(barVisitEvents).where(eq(barVisitEvents.visitId, visit.id));
+    }
+    await get().loadTodayVisit();
+  },
+
+  addVisitEvent: async (eventId) => {
+    const visit = get().todayVisit;
+    if (!visit) return;
+    // Check if already added
+    const existing = get().todayEvents.find((e) => e.eventId === eventId);
+    if (existing) return;
+    await db.insert(barVisitEvents).values({
+      id: generateId(),
+      visitId: visit.id,
+      eventId,
+      createdAt: new Date(),
+    });
+    // Auto-set dayType to event
+    if (visit.dayType !== "event") {
+      await db
+        .update(barVisits)
+        .set({ dayType: "event", updatedAt: new Date() })
+        .where(eq(barVisits.id, visit.id));
+    }
+    await get().loadTodayVisit();
+  },
+
+  removeVisitEvent: async (visitEventId) => {
+    const visit = get().todayVisit;
+    if (!visit) return;
+    await db.delete(barVisitEvents).where(eq(barVisitEvents.id, visitEventId));
+    // If no events left, switch back to normal
+    const remaining = get().todayEvents.filter((e) => e.id !== visitEventId);
+    if (remaining.length === 0) {
+      await db
+        .update(barVisits)
+        .set({ dayType: "normal", updatedAt: new Date() })
+        .where(eq(barVisits.id, visit.id));
+    }
     await get().loadTodayVisit();
   },
 

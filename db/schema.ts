@@ -72,6 +72,17 @@ export const barSlipItems = sqliteTable("bar_slip_items", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 });
 
+export const barVisitEvents = sqliteTable("bar_visit_events", {
+  id: text("id").primaryKey(),
+  visitId: text("visit_id")
+    .notNull()
+    .references(() => barVisits.id, { onDelete: "cascade" }),
+  eventId: text("event_id")
+    .notNull()
+    .references(() => barEvents.id),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+});
+
 export const appSettings = sqliteTable("app_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
